@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-# Chave da API que você informou
+# Sua chave da API atualizada
 API_KEY = "live_3c5fe5334d0f4f8a24ae5a4968ff49"
 BASE_URL = "https://api.api-futebol.com.br/v1"
 
@@ -11,7 +11,7 @@ headers = {
 
 st.title("Análise de Futebol com API Futebol (Brasileirão e outros)")
 
-# Função para buscar campeonatos
+# Função para buscar competições
 @st.cache_data(ttl=3600)
 def get_competitions():
     url = f"{BASE_URL}/campeonatos"
@@ -64,11 +64,15 @@ def extrair_numero_rodada(nome_rodada):
 
 selected_round_number = extrair_numero_rodada(selected_round_name)
 
-# Função para buscar jogos de uma rodada usando o número da rodada
+# Função para buscar jogos de uma rodada usando endpoint correto e filtros por query string
 @st.cache_data(ttl=600)
 def get_games(campeonato_id, rodada_num):
-    url = f"{BASE_URL}/campeonatos/{campeonato_id}/rodadas/{rodada_num}/jogos"
-    res = requests.get(url, headers=headers)
+    url = f"{BASE_URL}/jogos"
+    params = {
+        "campeonato": campeonato_id,
+        "rodada": rodada_num
+    }
+    res = requests.get(url, headers=headers, params=params)
     if res.status_code == 200:
         return res.json()
     else:
@@ -91,7 +95,7 @@ games_dict = {
 selected_game_name = st.selectbox("Escolha a Partida", list(games_dict.keys()))
 selected_game = games_dict[selected_game_name]
 
-# Mostrar informações básicas da partida
+# Mostrar informações básicas do jogo
 st.subheader(f"Jogo selecionado: {selected_game_name}")
 st.write(f"Data da partida: {selected_game['data_realizacao']}")
 local = selected_game.get('estadio', {}).get('nome_popular', 'Não disponível')
@@ -106,10 +110,7 @@ if selected_game.get('placar_oficial_mandante') is not None:
 else:
     st.info("Placar oficial não disponível. Partida pode não ter sido realizada ainda.")
 
-# Aqui podemos buscar dados adicionais como escanteios e outras estatísticas,
-# mas como a API fornece dados básicos neste endpoint, deixo como próximo passo para você.
-
-# Exemplo com probabilidades fixas (substitua por cálculos reais com dados)
+# Exemplo simples de cálculo de probabilidades (valores fictícios)
 st.subheader("Análise simples e sugestões de apostas")
 
 prob_over_2_5 = 0.55
