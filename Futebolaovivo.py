@@ -1,8 +1,8 @@
 import streamlit as st
 import requests
 
-# Sua chave da API
-API_KEY = "live_faa23ea1b1e8fa03d43634048d455e"
+# Chave da API atualizada
+API_KEY = "live_3c5fe5334d0f4f8a24ae5a4968ff49"
 BASE_URL = "https://api.api-futebol.com.br/v1"
 
 headers = {
@@ -19,7 +19,11 @@ def get_competitions():
     if res.status_code == 200:
         return res.json()
     else:
-        st.error("Erro ao carregar campeonatos da API.")
+        st.error(f"Erro ao carregar campeonatos da API. Código: {res.status_code}")
+        try:
+            st.error(f"Mensagem: {res.text}")
+        except:
+            pass
         return []
 
 competitions = get_competitions()
@@ -39,7 +43,11 @@ def get_rounds(campeonato_id):
     if res.status_code == 200:
         return res.json()
     else:
-        st.error("Erro ao carregar rodadas da API.")
+        st.error(f"Erro ao carregar rodadas da API. Código: {res.status_code}")
+        try:
+            st.error(f"Mensagem: {res.text}")
+        except:
+            pass
         return []
 
 rounds = get_rounds(selected_competition_id)
@@ -52,7 +60,6 @@ selected_round_name = st.selectbox("Escolha a Rodada", round_options)
 
 # Extrair só o número da rodada para usar na API (exemplo: "19" de "19ª Rodada")
 def extrair_numero_rodada(nome_rodada):
-    # Exemplo: '19ª Rodada' -> '19'
     return ''.join(filter(str.isdigit, nome_rodada))
 
 selected_round_number = extrair_numero_rodada(selected_round_name)
@@ -65,7 +72,11 @@ def get_games(campeonato_id, rodada_num):
     if res.status_code == 200:
         return res.json()
     else:
-        st.error("Erro ao carregar jogos da API.")
+        st.error(f"Erro ao carregar jogos da API. Código: {res.status_code}")
+        try:
+            st.error(f"Mensagem: {res.text}")
+        except:
+            pass
         return []
 
 games = get_games(selected_competition_id, selected_round_number)
@@ -95,7 +106,8 @@ if selected_game.get('placar_oficial_mandante') is not None:
 else:
     st.info("Placar oficial não disponível. Partida pode não ter sido realizada ainda.")
 
-# Exemplo simples de cálculo de probabilidades (você pode melhorar futuramente)
+# Exemplo simples de cálculo de probabilidades
+# (esses valores são fictícios, para você atualizar com dados históricos/reais da API)
 st.subheader("Análise simples e sugestões de apostas")
 
 prob_over_2_5 = 0.55
