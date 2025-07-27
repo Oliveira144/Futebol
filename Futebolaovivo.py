@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
 
-# Chave da API atualizada
+# Chave da API que você informou
 API_KEY = "live_3c5fe5334d0f4f8a24ae5a4968ff49"
 BASE_URL = "https://api.api-futebol.com.br/v1"
 
@@ -11,7 +11,7 @@ headers = {
 
 st.title("Análise de Futebol com API Futebol (Brasileirão e outros)")
 
-# Função para buscar competições
+# Função para buscar campeonatos
 @st.cache_data(ttl=3600)
 def get_competitions():
     url = f"{BASE_URL}/campeonatos"
@@ -58,13 +58,13 @@ if not rounds:
 round_options = [r['nome'] for r in rounds]
 selected_round_name = st.selectbox("Escolha a Rodada", round_options)
 
-# Extrair só o número da rodada para usar na API (exemplo: "19" de "19ª Rodada")
+# Função para extrair apenas números da rodada (ex: "19" de "19ª Rodada")
 def extrair_numero_rodada(nome_rodada):
     return ''.join(filter(str.isdigit, nome_rodada))
 
 selected_round_number = extrair_numero_rodada(selected_round_name)
 
-# Função para buscar jogos de uma rodada usando número da rodada
+# Função para buscar jogos de uma rodada usando o número da rodada
 @st.cache_data(ttl=600)
 def get_games(campeonato_id, rodada_num):
     url = f"{BASE_URL}/campeonatos/{campeonato_id}/rodadas/{rodada_num}/jogos"
@@ -91,13 +91,13 @@ games_dict = {
 selected_game_name = st.selectbox("Escolha a Partida", list(games_dict.keys()))
 selected_game = games_dict[selected_game_name]
 
-# Mostrar informações básicas do jogo
+# Mostrar informações básicas da partida
 st.subheader(f"Jogo selecionado: {selected_game_name}")
 st.write(f"Data da partida: {selected_game['data_realizacao']}")
 local = selected_game.get('estadio', {}).get('nome_popular', 'Não disponível')
 st.write(f"Local: {local}")
 
-# Estatísticas oficiais (caso disponível)
+# Estatísticas oficiais (se disponíveis)
 if selected_game.get('placar_oficial_mandante') is not None:
     gols_casa = selected_game['placar_oficial_mandante']
     gols_fora = selected_game['placar_oficial_visitante']
@@ -106,8 +106,10 @@ if selected_game.get('placar_oficial_mandante') is not None:
 else:
     st.info("Placar oficial não disponível. Partida pode não ter sido realizada ainda.")
 
-# Exemplo simples de cálculo de probabilidades
-# (esses valores são fictícios, para você atualizar com dados históricos/reais da API)
+# Aqui podemos buscar dados adicionais como escanteios e outras estatísticas,
+# mas como a API fornece dados básicos neste endpoint, deixo como próximo passo para você.
+
+# Exemplo com probabilidades fixas (substitua por cálculos reais com dados)
 st.subheader("Análise simples e sugestões de apostas")
 
 prob_over_2_5 = 0.55
