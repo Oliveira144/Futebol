@@ -1,154 +1,110 @@
 import streamlit as st
 import requests
+from datetime import date
+import pandas as pd
 
-API_KEY = "live_3c5fe5334d0f4f8a24ae5a4968ff49"
+# Configuração da página
+st.set_page_config(page_title="Consulta API Futebol", page_icon="⚽", layout="wide")
+
+st.title("⚽ Consulta Inteligente de Jogos - API Futebol")
+
+# Entrada da API Key
+API_KEY = st.text_input("Digite sua API Key", type="password")
+
+# Base URL
 BASE_URL = "https://api.api-futebol.com.br/v1"
-HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 
-st.title("Análise de Futebol com API Futebol (Brasileirão e outros)")
+# Funções para acessar API
+def get_jogos_por_data(api_key, data):
+    url = f"{BASE_URL}/partidas/{data}"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    return requests.get(url, headers=headers)
 
-@st.cache_data(ttl=3600)
-def get_competitions():
+def get_ao_vivo(api_key):
+    url = f"{BASE_URL}/ao-vivo"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    return requests.get(url, headers=headers)
+
+def get_campeonatos(api_key):
     url = f"{BASE_URL}/campeonatos"
-    res = requests.get(url, headers=HEADERS)
-    if res.status_code == 200:
-        return res.json()
-    else:
-        st.error(f"Erro ao carregar campeonatos. Código: {res.status_code}")
-        try:
-            st.error(f"Mensagem: {res.text}")
-        except:
-            pass
-        return []
+    headers = {"Authorization": f"Bearer {api_key}"}
+    return requests.get(url, headers=headers)
 
-@st.cache_data(ttl=600)
-def get_rounds(campeonato_id):
-    url = f"{BASE_URL}/campeonatos/{campeonato_id}/rodadas"
-    res = requests.get(url, headers=HEADERS)
-    if res.status_code == 200:
-        return res.json()
-    else:
-        st.error(f"Erro ao carregar rodadas. Código: {res.status_code}")
-        try:
-            st.error(f"Mensagem: {res.text}")
-        except:
-            pass
-        return []
+# Escolha da data
+data_escolhida = st.date_input("📅 Escolha a data dos jogos", value=date.today())
 
-@st.cache_data(ttl=600)
-def get_phases(campeonato_id):
-    url = f"{BASE_URL}/campeonatos/{campeonato_id}/fases"
-    res = requests.get(url, headers=HEADERS)
-    if res.status_code == 200:
-        return res.json()
-    else:
-        st.error(f"Erro ao carregar fases. Código: {res.status_code}")
-        try:
-            st.error(f"Mensagem: {res.text}")
-        except:
-            pass
-        return []
+# Opção para buscar
+col1, col2 = st.columns(2)
+with col1:
+    buscar_data = st.button("🔍 Buscar Jogos por Data")
+with col2:
+    buscar_ao_vivo = st.button("🎥 Jogos Ao Vivo")
 
-@st.cache_data(ttl=600)
-def get_games_by_phase(campeonato_id, fase_id):
-    url = f"{BASE_URL}/campeonatos/{campeonato_id}/fases/{fase_id}/jogos"
-    res = requests.get(url, headers=HEADERS)
-    if res.status_code == 200:
-        return res.json()
-    else:
-        st.error(f"Erro ao carregar jogos. Código: {res.status_code}")
-        try:
-            st.error(f"Mensagem: {res.text}")
-        except:
-            pass
-        return []
-
-def extrair_numero_rodada(nome_rodada):
-    return ''.join(filter(str.isdigit, nome_rodada))
-
-# 1. Seleção do Campeonato
-competitions = get_competitions()
-if not competitions:
-    st.stop()
-competitions_dict = {c['nome_popular']: c['campeonato_id'] for c in competitions}
-selected_competition_name = st.selectbox("Escolha o Campeonato", list(competitions_dict.keys()))
-selected_competition_id = competitions_dict[selected_competition_name]
-
-# 2. Seleção da Rodada
-rounds = get_rounds(selected_competition_id)
-if not rounds:
-    st.warning("Nenhuma rodada disponível para este campeonato.")
-    st.stop()
-round_names = [r['nome'] for r in rounds]
-selected_round_name = st.selectbox("Escolha a Rodada", round_names)
-selected_round_number = extrair_numero_rodada(selected_round_name)
-
-# 3. Seleção da Fase
-phases = get_phases(selected_competition_id)
-if not phases:
-    st.warning("Nenhuma fase disponível para este campeonato.")
-    st.stop()
-phases_dict = {p['nome']: p['fase_id'] for p in phases}
-selected_phase_name = st.selectbox("Escolha a Fase", list(phases_dict.keys()))
-selected_phase_id = phases_dict[selected_phase_name]
-
-# 4. Buscar jogos da fase e filtrar pela rodada
-all_games = get_games_by_phase(selected_competition_id, selected_phase_id)
-if not all_games:
-    st.warning("Nenhum jogo encontrado para a fase selecionada.")
-    st.stop()
-
-games_filtered = [g for g in all_games if str(g.get('rodada')) == selected_round_number]
-if not games_filtered:
-    st.warning(f"Nenhum jogo encontrado para a rodada {selected_round_name} na fase {selected_phase_name}.")
-    st.stop()
-
-games_dict = {
-    f"{g['time_mandante']['nome_popular']} x {g['time_visitante']['nome_popular']}": g
-    for g in games_filtered
-}
-selected_game_name = st.selectbox("Escolha a Partida", list(games_dict.keys()))
-selected_game = games_dict[selected_game_name]
-
-# 5. Mostrar detalhes do jogo
-st.subheader(f"Jogo selecionado: {selected_game_name}")
-st.write(f"Data da partida: {selected_game['data_realizacao']}")
-local = selected_game.get('estadio', {}).get('nome_popular', 'Não disponível')
-st.write(f"Local: {local}")
-
-if selected_game.get('placar_oficial_mandante') is not None:
-    gols_casa = selected_game['placar_oficial_mandante']
-    gols_fora = selected_game['placar_oficial_visitante']
-    st.write(f"Gols Casa: {gols_casa}")
-    st.write(f"Gols Fora: {gols_fora}")
+# Checa API Key
+if not API_KEY:
+    st.warning("Insira sua API Key para continuar.")
 else:
-    st.info("Placar oficial não disponível. O jogo pode ainda não ter ocorrido.")
+    # Exibe campeonatos para filtro
+    campeonatos = get_campeonatos(API_KEY)
+    if campeonatos.status_code == 200:
+        lista_camps = campeonatos.json()
+        nomes_camps = {camp['campeonato_id']: camp['nome'] for camp in lista_camps}
+        camp_id = st.selectbox("Filtrar por Campeonato", options=[0] + list(nomes_camps.keys()), format_func=lambda x: "Todos" if x == 0 else nomes_camps[x])
+    else:
+        st.error("Erro ao buscar campeonatos.")
 
-# 6. Sugestões simples de apostas (exemplo com dados fixos)
-st.subheader("Sugestões de Probabilidades e Combos")
+    # Buscar jogos por data
+    if buscar_data:
+        with st.spinner("Buscando jogos..."):
+            response = get_jogos_por_data(API_KEY, data_escolhida.strftime("%Y-%m-%d"))
+            if response.status_code == 200:
+                partidas = response.json()
+                # Filtrar por campeonato
+                if camp_id != 0:
+                    partidas = [p for p in partidas if p['campeonato']['campeonato_id'] == camp_id]
+                if partidas:
+                    st.success(f"✅ {len(partidas)} jogos encontrados para {data_escolhida}")
+                    dados = []
+                    for p in partidas:
+                        dados.append({
+                            "Campeonato": p['campeonato']['nome'],
+                            "Casa": p['casa']['nome_popular'],
+                            "Visitante": p['visitante']['nome_popular'],
+                            "Placar": p['placar'],
+                            "Status": p['status'],
+                            "Hora": p['data_realizacao'] + " " + p['hora_realizacao']
+                        })
+                    df = pd.DataFrame(dados)
+                    st.dataframe(df, use_container_width=True)
+                else:
+                    st.info("Nenhum jogo encontrado para os filtros.")
+            elif response.status_code == 401:
+                st.error("❌ API Key inválida.")
+            elif response.status_code == 429:
+                st.warning("⚠️ Limite diário atingido.")
+            else:
+                st.error(f"Erro {response.status_code}: {response.text}")
 
-prob_over_2_5 = 0.55
-prob_btts = 0.50
-prob_escanteios_over_9 = 0.60
-
-odds_over_2_5 = 1.90
-odds_btts = 1.85
-odds_escanteios = 1.80
-
-combo_odds = odds_over_2_5 * odds_btts * odds_escanteios
-
-st.write(f"Probabilidades sugeridas:")
-st.write(f"- Over 2.5 gols: {prob_over_2_5 * 100:.1f}%")
-st.write(f"- Ambas Marcam (BTTS): {prob_btts * 100:.1f}%")
-st.write(f"- Escanteios Over 9.5: {prob_escanteios_over_9 * 100:.1f}%")
-
-st.write(f"Odds para apostas:")
-st.write(f"- Over 2.5 gols: {odds_over_2_5}")
-st.write(f"- Ambas Marcam (BTTS): {odds_btts}")
-st.write(f"- Escanteios Over 9.5: {odds_escanteios}")
-
-st.write(f"Odds combinadas do combo sugerido: {combo_odds:.2f}")
-
-valor_aposta = st.number_input("Valor da aposta (R$)", value=10.0, min_value=0.0, step=1.0)
-retorno_potencial = valor_aposta * combo_odds
-st.write(f"Retorno potencial da aposta: R$ {retorno_potencial:.2f}")
+    # Buscar jogos ao vivo
+    if buscar_ao_vivo:
+        with st.spinner("Carregando jogos ao vivo..."):
+            response = get_ao_vivo(API_KEY)
+            if response.status_code == 200:
+                partidas = response.json()
+                if partidas:
+                    st.success(f"🎥 {len(partidas)} jogos ao vivo agora!")
+                    dados = []
+                    for p in partidas:
+                        dados.append({
+                            "Campeonato": p['campeonato']['nome'],
+                            "Casa": p['casa']['nome_popular'],
+                            "Visitante": p['visitante']['nome_popular'],
+                            "Placar": p['placar'],
+                            "Status": p['status']
+                        })
+                    df = pd.DataFrame(dados)
+                    st.dataframe(df, use_container_width=True)
+                else:
+                    st.info("Nenhum jogo ao vivo no momento.")
+            else:
+                st.error(f"Erro {response.status_code}: {response.text}")
