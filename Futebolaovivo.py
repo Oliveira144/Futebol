@@ -3,30 +3,22 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 
-# ---------------- CONFIGURAÇÕES ---------------- #
+# ---------------- CONFIG ---------------- #
 st.set_page_config(page_title="Sugestões Futebol Inteligente", page_icon="⚽", layout="wide")
-st.title("⚽ Consulta Inteligente de Jogos - API-Football")
+st.title("⚽ Consulta Inteligente de Jogos - API-Football (RapidAPI)")
 
-# Entrada da API Key
+# API Key
 API_KEY = st.text_input("Digite sua API Key da RapidAPI", type="password").strip()
 BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
-
 headers = {
     "x-rapidapi-host": "api-football-v1.p.rapidapi.com",
     "x-rapidapi-key": API_KEY
 }
 
 # ---------------- FUNÇÕES ---------------- #
-
 def buscar_jogos(data):
     url = f"{BASE_URL}/fixtures"
     params = {"date": data}
-    r = requests.get(url, headers=headers, params=params)
-    return r.json() if r.status_code == 200 else None
-
-def buscar_odds(fixture_id):
-    url = f"{BASE_URL}/odds"
-    params = {"fixture": fixture_id}
     r = requests.get(url, headers=headers, params=params)
     return r.json() if r.status_code == 200 else None
 
@@ -39,59 +31,58 @@ def buscar_stats(time_id, liga_id, temporada):
 def gerar_sugestao(mercado, stats_home, stats_away):
     sugestao = "⚠ Dados insuficientes"
     
-    if mercado == "Vitória (1X2)":
-        home_wins = stats_home["response"]["fixtures"]["wins"]["total"]
-        away_wins = stats_away["response"]["fixtures"]["wins"]["total"]
-        if home_wins > away_wins:
-            sugestao = "✅ Sugestão: Vitória do Mandante"
-        else:
-            sugestao = "✅ Sugestão: Vitória do Visitante"
+    try:
+        if mercado == "Vitória (1X2)":
+            if stats_home["response"]["fixtures"]["wins"]["total"] > stats_away["response"]["fixtures"]["wins"]["total"]:
+                sugestao = "✅ Sugestão: Vitória do Mandante"
+            else:
+                sugestao = "✅ Sugestão: Vitória do Visitante"
 
-    elif mercado == "Over/Under Gols":
-        media_gols_home = stats_home["response"]["goals"]["for"]["average"]["total"]
-        media_gols_away = stats_away["response"]["goals"]["for"]["average"]["total"]
-        media_total = (float(media_gols_home) + float(media_gols_away)) / 2
-        if media_total > 2.5:
-            sugestao = "✅ Sugestão: Over 2.5 Gols"
-        else:
-            sugestao = "✅ Sugestão: Under 2.5 Gols"
+        elif mercado == "Over/Under Gols":
+            media_gols_home = float(stats_home["response"]["goals"]["for"]["average"]["total"])
+            media_gols_away = float(stats_away["response"]["goals"]["for"]["average"]["total"])
+            media_total = (media_gols_home + media_gols_away) / 2
+            if media_total > 2.5:
+                sugestao = "✅ Sugestão: Over 2.5 Gols"
+            else:
+                sugestao = "✅ Sugestão: Under 2.5 Gols"
 
-    elif mercado == "Escanteios":
-        corners_home = stats_home["response"]["fixtures"]["played"]["total"] * 5
-        corners_away = stats_away["response"]["fixtures"]["played"]["total"] * 5
-        if (corners_home + corners_away) / 2 > 9:
-            sugestao = "✅ Sugestão: Over 9.5 Escanteios"
-        else:
-            sugestao = "✅ Sugestão: Under 9.5 Escanteios"
+        elif mercado == "Escanteios":
+            corners_home = stats_home["response"]["fixtures"]["played"]["total"] * 5
+            corners_away = stats_away["response"]["fixtures"]["played"]["total"] * 5
+            if (corners_home + corners_away) / 2 > 9:
+                sugestao = "✅ Sugestão: Over 9.5 Escanteios"
+            else:
+                sugestao = "✅ Sugestão: Under 9.5 Escanteios"
 
-    elif mercado == "Gol HT/FT":
-        if stats_home["response"]["fixtures"]["wins"]["total"] > stats_away["response"]["fixtures"]["wins"]["total"]:
-            sugestao = "✅ Sugestão: Mandante vence HT e FT"
-        else:
-            sugestao = "✅ Sugestão: Visitante vence HT e FT"
+        elif mercado == "Gol HT/FT":
+            if stats_home["response"]["fixtures"]["wins"]["total"] > stats_away["response"]["fixtures"]["wins"]["total"]:
+                sugestao = "✅ Sugestão: Mandante vence HT e FT"
+            else:
+                sugestao = "✅ Sugestão: Visitante vence HT e FT"
 
-    elif mercado == "Placar Exato":
-        sugestao = "🔍 Placar Exato provável: 2-1 (baseado em histórico)"
-
+        elif mercado == "Placar Exato":
+            sugestao = "🔍 Placar Exato provável: 2-1 (com base no histórico)"
+    except:
+        sugestao = "⚠ Não foi possível calcular sugestão para esse mercado."
+    
     return sugestao
 
 # ---------------- INTERFACE ---------------- #
-
 if API_KEY:
-    # Escolher data manualmente
-    st.subheader("📅 Escolha a data")
+    st.subheader("📅 Escolha a Data")
     data_escolhida = st.date_input("Selecione uma data", value=datetime.now().date())
-    
+
     col1, col2 = st.columns(2)
     with col1:
         buscar_data = st.button("🔍 Buscar Jogos")
     with col2:
         buscar_amanha = st.button("📅 Jogos de Amanhã")
-    
+
     dados = None
     if buscar_data:
         data_formatada = data_escolhida.strftime("%Y-%m-%d")
-        with st.spinner("Buscando jogos..."):
+        with st.spinner(f"Buscando jogos para {data_formatada}..."):
             dados = buscar_jogos(data_formatada)
 
     if buscar_amanha:
@@ -118,7 +109,7 @@ if API_KEY:
                                ["Vitória (1X2)", "Over/Under Gols", "Escanteios", "Gol HT/FT", "Placar Exato"])
 
         if st.button("🔍 Gerar Sugestão"):
-            with st.spinner("Analisando dados e odds..."):
+            with st.spinner("Analisando dados..."):
                 jogo = next(item for item in dados["response"] if item["fixture"]["id"] == jogo_id)
                 home_id = jogo["teams"]["home"]["id"]
                 away_id = jogo["teams"]["away"]["id"]
