@@ -3,10 +3,11 @@ import requests
 import pandas as pd
 from datetime import datetime, timedelta
 
-# ------------------ CONFIG ------------------ #
+# ---------------- CONFIGURAÇÕES ---------------- #
 st.set_page_config(page_title="Sugestões Futebol Inteligente", page_icon="⚽", layout="wide")
 st.title("⚽ Consulta Inteligente de Jogos - API-Football")
 
+# Entrada da API Key
 API_KEY = st.text_input("Digite sua API Key da RapidAPI", type="password").strip()
 BASE_URL = "https://api-football-v1.p.rapidapi.com/v3"
 
@@ -15,7 +16,7 @@ headers = {
     "x-rapidapi-key": API_KEY
 }
 
-# ------------------ FUNÇÕES ------------------ #
+# ---------------- FUNÇÕES ---------------- #
 
 def buscar_jogos(data):
     url = f"{BASE_URL}/fixtures"
@@ -35,7 +36,7 @@ def buscar_stats(time_id, liga_id, temporada):
     r = requests.get(url, headers=headers, params=params)
     return r.json() if r.status_code == 200 else None
 
-def gerar_sugestao(mercado, odds, stats_home, stats_away):
+def gerar_sugestao(mercado, stats_home, stats_away):
     sugestao = "⚠ Dados insuficientes"
     
     if mercado == "Vitória (1X2)":
@@ -64,24 +65,39 @@ def gerar_sugestao(mercado, odds, stats_home, stats_away):
             sugestao = "✅ Sugestão: Under 9.5 Escanteios"
 
     elif mercado == "Gol HT/FT":
-        if home_wins > away_wins:
+        if stats_home["response"]["fixtures"]["wins"]["total"] > stats_away["response"]["fixtures"]["wins"]["total"]:
             sugestao = "✅ Sugestão: Mandante vence HT e FT"
         else:
             sugestao = "✅ Sugestão: Visitante vence HT e FT"
 
     elif mercado == "Placar Exato":
-        sugestao = "🔍 Placar Exato: 2-1 (baseado em histórico)"
+        sugestao = "🔍 Placar Exato provável: 2-1 (baseado em histórico)"
 
     return sugestao
 
-# ------------------ INTERFACE ------------------ #
+# ---------------- INTERFACE ---------------- #
 
 if API_KEY:
-    st.subheader("📅 Jogos de Amanhã")
-    tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+    # Escolher data manualmente
+    st.subheader("📅 Escolha a data")
+    data_escolhida = st.date_input("Selecione uma data", value=datetime.now().date())
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        buscar_data = st.button("🔍 Buscar Jogos")
+    with col2:
+        buscar_amanha = st.button("📅 Jogos de Amanhã")
+    
+    dados = None
+    if buscar_data:
+        data_formatada = data_escolhida.strftime("%Y-%m-%d")
+        with st.spinner("Buscando jogos..."):
+            dados = buscar_jogos(data_formatada)
 
-    with st.spinner("Carregando jogos..."):
-        dados = buscar_jogos(tomorrow)
+    if buscar_amanha:
+        data_amanha = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+        with st.spinner("Buscando jogos de amanhã..."):
+            dados = buscar_jogos(data_amanha)
 
     if dados and dados.get("response"):
         jogos = []
@@ -111,10 +127,8 @@ if API_KEY:
 
                 stats_home = buscar_stats(home_id, liga_id, temporada)
                 stats_away = buscar_stats(away_id, liga_id, temporada)
-                odds = buscar_odds(jogo_id)
 
-                sugestao = gerar_sugestao(mercado, odds, stats_home, stats_away)
+                sugestao = gerar_sugestao(mercado, stats_home, stats_away)
                 st.success(sugestao)
-
-    else:
-        st.warning("Nenhum jogo encontrado para amanhã.")
+    elif dados is not None:
+        st.warning("Nenhum jogo encontrado para a data selecionada.")
