@@ -1,8 +1,7 @@
 import streamlit as st
-import pandas as pd
 import requests
-from scipy.stats import poisson
-import os
+import math
+import time
 
 st.set_page_config(page_title="Football Analyzer Pro", layout="wide")
 
@@ -10,15 +9,38 @@ st.set_page_config(page_title="Football Analyzer Pro", layout="wide")
 API_HOST = "api-football-v1.p.rapidapi.com"
 API_URL = "https://api-football-v1.p.rapidapi.com/v3"
 
+# ▶️ Implementação alternativa de Poisson (caso SciPy não esteja disponível)
+def poisson_pdf(k, mu):
+    """Calcula a probabilidade Poisson sem dependências externas"""
+    return (mu ** k) * math.exp(-mu) / math.factorial(k)
+
+def poisson_cdf(k, mu):
+    """Calcula a função de distribuição acumulada Poisson"""
+    cdf = 0.0
+    for i in range(0, k + 1):
+        cdf += poisson_pdf(i, mu)
+    return cdf
+
+# ▶️ Inicialização de sessão
+if 'avg_goals_home' not in st.session_state:
+    st.session_state.update({
+        'avg_goals_home': 1.5,
+        'avg_goals_away': 1.2,
+        'avg_corners_home': 5.0,
+        'avg_corners_away': 4.5,
+        'win_rate_home': 50.0,
+        'win_rate_away': 30.0
+    })
+
 st.title("⚽ Football Analyzer Pro")
 st.subheader("Análise Avançada com Dados Automáticos de API")
 st.markdown("---")
 
 # ▶️ Configurações de API na sidebar
 st.sidebar.header("🔌 Configurações da API")
-api_key = st.sidebar.text_input("Chave API-Football", type="password")
+api_key = st.sidebar.text_input("Chave API-Football", type="password", help="Obtenha em: https://www.api-football.com/")
 season = st.sidebar.number_input("Temporada", 2023, 2025, 2024)
-league_id = st.sidebar.number_input("ID da Liga", value=71, help="Ex: 71 = Brasileirão, 39 = Premier League")
+league_id = st.sidebar.number_input("ID da Liga", value=71, help="Ex: 71=Brasileirão, 39=Premier League, 140=La Liga")
 
 # ▶️ Função para buscar dados da API
 def fetch_team_data(api_key, team_name, league, season):
@@ -38,7 +60,7 @@ def fetch_team_data(api_key, team_name, league, season):
         response = requests.get(url, headers=headers, params=querystring)
         team_data = response.json()
         
-        if team_data['results'] == 0:
+        if team_data.get('results', 0) == 0:
             st.error(f"Time '{team_name}' não encontrado!")
             return None
             
@@ -92,7 +114,9 @@ def analyze_match(home_data, away_data):
         
         # Análise de gols
         avg_goals_total = avg_goals_home + avg_goals_away
-        prob_over_25 = 1 - poisson.cdf(2.5, mu=avg_goals_total) if avg_goals_total else 0
+        
+        # Usar implementação própria de Poisson
+        prob_over_25 = 1 - poisson_cdf(2, avg_goals_total) if avg_goals_total else 0
         
         # Análise de escanteios
         total_corners = avg_corners_home + avg_corners_away
@@ -122,29 +146,28 @@ col1, col2 = st.columns(2)
 
 with col1:
     team_home = st.text_input("Time Mandante")
-    # Usar session_state para manter os valores
     avg_goals_home = st.number_input("Média de Gols Marcados (Casa)", 0.0, 10.0, step=0.1, 
-                                    key='avg_goals_home', value=st.session_state.get('avg_goals_home', 0.0))
+                                    value=st.session_state.get('avg_goals_home', 1.5))
     avg_corners_home = st.number_input("Média de Escanteios (Casa)", 0.0, 20.0, step=0.1,
-                                     key='avg_corners_home', value=st.session_state.get('avg_corners_home', 0.0))
+                                     value=st.session_state.get('avg_corners_home', 5.0))
 
 with col2:
     team_away = st.text_input("Time Visitante")
     avg_goals_away = st.number_input("Média de Gols Marcados (Fora)", 0.0, 10.0, step=0.1,
-                                    key='avg_goals_away', value=st.session_state.get('avg_goals_away', 0.0))
+                                    value=st.session_state.get('avg_goals_away', 1.2))
     avg_corners_away = st.number_input("Média de Escanteios (Fora)", 0.0, 20.0, step=0.1,
-                                     key='avg_corners_away', value=st.session_state.get('avg_corners_away', 0.0))
+                                     value=st.session_state.get('avg_corners_away', 4.5))
 
 st.markdown("### 📊 Dados Avançados")
 col3, col4 = st.columns(2)
 
 with col3:
     win_rate_home = st.number_input("Taxa de Vitórias Casa (%)", 0.0, 100.0, step=1.0,
-                                  key='win_rate_home', value=st.session_state.get('win_rate_home', 0.0))
+                                  value=st.session_state.get('win_rate_home', 50.0))
 
 with col4:
     win_rate_away = st.number_input("Taxa de Vitórias Fora (%)", 0.0, 100.0, step=1.0,
-                                  key='win_rate_away', value=st.session_state.get('win_rate_away', 0.0))
+                                  value=st.session_state.get('win_rate_away', 30.0))
 
 # ▶️ Botão para buscar dados automáticos
 if st.button("🔄 Buscar Dados Automáticos", help="Busca estatísticas atualizadas da API") and api_key:
@@ -156,14 +179,15 @@ if st.button("🔄 Buscar Dados Automáticos", help="Busca estatísticas atualiz
             analysis = analyze_match(home_data, away_data)
             
             # Atualizar campos com dados da API
-            st.session_state.avg_goals_home = analysis.get('avg_goals_home', 0)
-            st.session_state.avg_goals_away = analysis.get('avg_goals_away', 0)
-            st.session_state.avg_corners_home = analysis.get('avg_corners_home', 0)
-            st.session_state.avg_corners_away = analysis.get('avg_corners_away', 0)
-            st.session_state.win_rate_home = analysis.get('win_rate_home', 0)
-            st.session_state.win_rate_away = analysis.get('win_rate_away', 0)
+            st.session_state.avg_goals_home = analysis.get('avg_goals_home', 1.5)
+            st.session_state.avg_goals_away = analysis.get('avg_goals_away', 1.2)
+            st.session_state.avg_corners_home = analysis.get('avg_corners_home', 5.0)
+            st.session_state.avg_corners_away = analysis.get('avg_corners_away', 4.5)
+            st.session_state.win_rate_home = analysis.get('win_rate_home', 50.0)
+            st.session_state.win_rate_away = analysis.get('win_rate_away', 30.0)
             
             st.success("Dados atualizados com sucesso!")
+            time.sleep(1)
             st.rerun()
 
 # ▶️ Processar Análise
@@ -183,7 +207,7 @@ if st.button("🔍 Analisar Partida"):
         st.write(f"Média total de gols esperados: **{avg_goals_total:.2f}**")
         
         # Cálculo de probabilidade com Poisson
-        prob_over_25 = 1 - poisson.cdf(2.5, mu=avg_goals_total) if avg_goals_total > 0 else 0
+        prob_over_25 = 1 - poisson_cdf(2, avg_goals_total)  # P(X > 2) = 1 - P(X <= 2)
         
         if prob_over_25 >= 0.65:  # 65% de probabilidade
             st.success(f"✅ Forte tendência de Over 2.5 gols (Prob: {prob_over_25:.0%})")
