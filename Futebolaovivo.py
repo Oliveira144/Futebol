@@ -7,7 +7,7 @@ import numpy as np
 from datetime import datetime
 
 # Configurações
-st.set_page_config(page_title="Football Analyzer Pro", layout="wide", page_icon="⚽")
+st.set_page_config(page_title="Football Analyzer Pro+", layout="wide", page_icon="⚽")
 
 # Configurações da API
 API_HOST = "api-football-v1.p.rapidapi.com"
@@ -64,11 +64,10 @@ if 'avg_goals_home' not in st.session_state:
     st.session_state.update({
         'avg_goals_home': 1.5,
         'avg_goals_away': 1.2,
-        'win_rate_home': 50.0,
-        'win_rate_away': 30.0,
         'league_id': 71,
         'league_name': "Campeonato Brasileiro Série A",
-        'elo_system': FootballElo()
+        'elo_system': FootballElo(),
+        'leagues_cache': {}
     })
 
 # ▶️ Interface principal
@@ -78,12 +77,91 @@ st.markdown("---")
 
 # ▶️ Configurações na sidebar
 st.sidebar.header("🔌 Configurações")
-season = st.sidebar.number_input("Temporada", 2023, 2025, 2024)
+season = st.sidebar.number_input("Temporada", 2023, 2025, 2025)
 
+# ▶️ Sistema Avançado de Seleção de Liga
 st.sidebar.markdown("### 🏆 Seleção de Liga")
-league_id = st.sidebar.number_input("ID da Liga", min_value=1, value=71, step=1,
-                                   help="Ex: 71 = Brasileirão, 39 = Premier League")
-st.session_state.league_id = league_id
+
+# Busca de ligas na API
+def search_leagues(search_term, season):
+    if not search_term:
+        return []
+    
+    headers = {
+        "X-RapidAPI-Key": API_KEY,
+        "X-RapidAPI-Host": API_HOST
+    }
+    
+    try:
+        url = f"{API_URL}/leagues"
+        querystring = {"search": search_term, "season": season}
+        response = requests.get(url, headers=headers, params=querystring)
+        leagues_data = response.json()
+        
+        if leagues_data.get('results', 0) == 0:
+            return []
+            
+        leagues = []
+        for league in leagues_data['response']:
+            league_info = league['league']
+            country = league['country']['name'] if 'country' in league else "Desconhecido"
+            leagues.append({
+                'id': league_info['id'],
+                'name': f"{league_info['name']} ({country})",
+                'type': league_info['type']
+            })
+        return leagues
+    except Exception as e:
+        st.sidebar.error(f"Erro ao buscar ligas: {str(e)}")
+        return []
+
+# Lista de ligas populares
+POPULAR_LEAGUES = [
+    {"name": "Brasileirão Série A", "id": 71, "country": "Brasil"},
+    {"name": "Premier League", "id": 39, "country": "Inglaterra"},
+    {"name": "La Liga", "id": 140, "country": "Espanha"},
+    {"name": "Bundesliga", "id": 78, "country": "Alemanha"},
+    {"name": "Serie A", "id": 135, "country": "Itália"},
+    {"name": "Ligue 1", "id": 61, "country": "França"},
+    {"name": "Liga Portugal", "id": 94, "country": "Portugal"},
+    {"name": "Eredivisie", "id": 88, "country": "Holanda"},
+    {"name": "MLS", "id": 253, "country": "EUA/Canadá"},
+    {"name": "Copa Libertadores", "id": 13, "country": "América do Sul"}
+]
+
+# Campo de busca
+league_search = st.sidebar.text_input("Buscar Liga por Nome", key="league_search")
+
+# Seção de ligas populares
+st.sidebar.markdown("#### Ligas Populares:")
+popular_cols = st.sidebar.columns(2)
+for i, league in enumerate(POPULAR_LEAGUES):
+    with popular_cols[i % 2]:
+        if st.button(f"{league['name']}", key=f"pop_league_{i}"):
+            st.session_state.league_id = league['id']
+            st.session_state.league_name = league['name']
+            st.rerun()
+
+# Busca dinâmica
+if league_search:
+    league_results = search_leagues(league_search, season)
+    
+    if league_results:
+        st.sidebar.markdown("#### Resultados da Busca:")
+        for league in league_results:
+            if st.sidebar.button(league['name'], key=f"srch_league_{league['id']}"):
+                st.session_state.league_id = league['id']
+                st.session_state.league_name = league['name']
+                st.rerun()
+    else:
+        st.sidebar.warning("Nenhuma liga encontrada")
+
+# Mostrar liga selecionada
+st.sidebar.markdown("---")
+st.sidebar.subheader("Liga Selecionada")
+if 'league_name' in st.session_state:
+    st.sidebar.info(f"**{st.session_state.league_name}**")
+st.sidebar.info(f"ID: **{st.session_state.league_id}**")
 
 # ▶️ Função para buscar dados da API
 def fetch_team_data(team_name, league, season):
