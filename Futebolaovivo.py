@@ -115,7 +115,7 @@ if 'league_name' in st.session_state:
     st.sidebar.info(f"**{st.session_state.league_name}**")
 st.sidebar.info(f"ID: **{st.session_state.league_id}**")
 
-# ▶️ Função para buscar dados da API
+# ▶️ Função para buscar dados da API - CORRIGIDA
 def fetch_team_data(team_name, league, season):
     headers = {
         "X-RapidAPI-Key": API_KEY,
@@ -126,7 +126,16 @@ def fetch_team_data(team_name, league, season):
         # Buscar ID do time
         url = f"{API_URL}/teams"
         querystring = {"name": team_name}
-        response = requests.get(url, headers=headers, params=querystring)
+        response = requests.get(url, headers=headers, params=querystring, timeout=10)
+        
+        # Verificar limite de requisições
+        if response.status_code == 429:
+            st.error("Limite de requisições excedido. Tente novamente mais tarde.")
+            return None
+        elif response.status_code != 200:
+            st.error(f"Erro na API: {response.status_code}")
+            return None
+            
         team_data = response.json()
         
         if team_data.get('results', 0) == 0:
@@ -142,10 +151,21 @@ def fetch_team_data(team_name, league, season):
             "league": league,
             "season": season
         }
-        response = requests.get(url, headers=headers, params=querystring)
+        response = requests.get(url, headers=headers, params=querystring, timeout=10)
+        
+        if response.status_code == 429:
+            st.error("Limite de requisições excedido. Tente novamente mais tarde.")
+            return None
+        elif response.status_code != 200:
+            st.error(f"Erro na API: {response.status_code}")
+            return None
+            
         stats_data = response.json()
         
         return stats_data.get('response', {})
+    except requests.exceptions.Timeout:
+        st.error("A requisição demorou muito. Tente novamente.")
+        return None
     except Exception as e:
         st.error(f"Erro na API: {str(e)}")
         return None
@@ -259,21 +279,31 @@ def value_bet_analysis(probabilities, market_odds):
     
     return pd.DataFrame(value_bets)
 
-# ▶️ Entrada de dados
+# ▶️ Entrada de dados - CORRIGIDA
 st.header("📋 Informações da Partida")
 col1, col2 = st.columns(2)
 
 with col1:
     team_home = st.text_input("Time Mandante", key='home_team')
-    avg_goals_home = st.number_input("Média de Gols Marcados (Casa)", 0.0, 10.0, step=0.1, 
-                                    value=st.session_state.get('avg_goals_home', 1.5))
+    # Vinculado ao session_state
+    avg_goals_home = st.number_input(
+        "Média de Gols Marcados (Casa)", 
+        0.0, 10.0, step=0.1,
+        value=st.session_state.avg_goals_home,
+        key='avg_home_input'
+    )
 
 with col2:
     team_away = st.text_input("Time Visitante", key='away_team')
-    avg_goals_away = st.number_input("Média de Gols Marcados (Fora)", 0.0, 10.0, step=0.1,
-                                    value=st.session_state.get('avg_goals_away', 1.2))
+    # Vinculado ao session_state
+    avg_goals_away = st.number_input(
+        "Média de Gols Marcados (Fora)", 
+        0.0, 10.0, step=0.1,
+        value=st.session_state.avg_goals_away,
+        key='avg_away_input'
+    )
 
-# ▶️ Botão para buscar dados automáticos
+# ▶️ Botão para buscar dados automáticos - CORRIGIDO
 if st.button("🔄 Buscar Dados Automáticos", help="Busca estatísticas atualizadas da API"):
     if not team_home or not team_away:
         st.error("Por favor, preencha os nomes dos times!")
@@ -282,16 +312,38 @@ if st.button("🔄 Buscar Dados Automáticos", help="Busca estatísticas atualiz
             home_data = fetch_team_data(team_home, st.session_state.league_id, season)
             away_data = fetch_team_data(team_away, st.session_state.league_id, season)
             
+            # Processamento CORRETO dos dados do time mandante
             if home_data:
                 try:
-                    st.session_state.avg_goals_home = home_data['goals']['for']['average']['home']
-                except KeyError:
-                    st.warning("Dados incompletos para o time mandante")
+                    # Acessando corretamente a estrutura de dados
+                    if 'goals' in home_data and 'for' in home_data['goals']:
+                        goals_for = home_data['goals']['for']
+                        if 'average' in goals_for and 'home' in goals_for['average']:
+                            # Convertendo para float
+                            avg_home = float(goals_for['average']['home'])
+                            st.session_state.avg_goals_home = avg_home
+                        else:
+                            st.warning(f"Dados de média de gols em casa não encontrados para {team_home}")
+                    else:
+                        st.warning(f"Dados de gols não encontrados para {team_home}")
+                except Exception as e:
+                    st.error(f"Erro ao processar dados do {team_home}: {str(e)}")
+            
+            # Processamento CORRETO dos dados do time visitante
             if away_data:
                 try:
-                    st.session_state.avg_goals_away = away_data['goals']['for']['average']['away']
-                except KeyError:
-                    st.warning("Dados incompletos para o time visitante")
+                    if 'goals' in away_data and 'for' in away_data['goals']:
+                        goals_for = away_data['goals']['for']
+                        if 'average' in goals_for and 'away' in goals_for['average']:
+                            # Convertendo para float
+                            avg_away = float(goals_for['average']['away'])
+                            st.session_state.avg_goals_away = avg_away
+                        else:
+                            st.warning(f"Dados de média de gols fora não encontrados para {team_away}")
+                    else:
+                        st.warning(f"Dados de gols não encontrados para {team_away}")
+                except Exception as e:
+                    st.error(f"Erro ao processar dados do {team_away}: {str(e)}")
             
             st.success("Dados atualizados com sucesso!")
             time.sleep(1)
