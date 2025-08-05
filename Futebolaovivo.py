@@ -1,4 +1,4 @@
-import streamlit as st
+             import streamlit as st
 import requests
 import math
 import time
@@ -9,13 +9,29 @@ st.set_page_config(page_title="Football Analyzer Pro", layout="wide")
 API_HOST = "api-football-v1.p.rapidapi.com"
 API_URL = "https://api-football-v1.p.rapidapi.com/v3"
 
-# ▶️ Implementação alternativa de Poisson (caso SciPy não esteja disponível)
+# ▶️ Dicionário de ligas famosas
+LEAGUES = {
+    "Brasileirão Série A": 71,
+    "Premier League (Inglaterra)": 39,
+    "La Liga (Espanha)": 140,
+    "Bundesliga (Alemanha)": 78,
+    "Serie A (Itália)": 135,
+    "Ligue 1 (França)": 61,
+    "Liga Portugal": 94,
+    "Eredivisie (Holanda)": 88,
+    "MLS (EUA/Canadá)": 253,
+    "Argentine Primera División": 128,
+    "UEFA Champions League": 2,
+    "UEFA Europa League": 3,
+    "Copa Libertadores": 13,
+    "Outra Liga": None
+}
+
+# ▶️ Implementação alternativa de Poisson
 def poisson_pdf(k, mu):
-    """Calcula a probabilidade Poisson sem dependências externas"""
     return (mu ** k) * math.exp(-mu) / math.factorial(k)
 
 def poisson_cdf(k, mu):
-    """Calcula a função de distribuição acumulada Poisson"""
     cdf = 0.0
     for i in range(0, k + 1):
         cdf += poisson_pdf(i, mu)
@@ -29,7 +45,8 @@ if 'avg_goals_home' not in st.session_state:
         'avg_corners_home': 5.0,
         'avg_corners_away': 4.5,
         'win_rate_home': 50.0,
-        'win_rate_away': 30.0
+        'win_rate_away': 30.0,
+        'selected_league': 71
     })
 
 st.title("⚽ Football Analyzer Pro")
@@ -38,13 +55,30 @@ st.markdown("---")
 
 # ▶️ Configurações de API na sidebar
 st.sidebar.header("🔌 Configurações da API")
-api_key = st.sidebar.text_input("Chave API-Football", type="password", help="Obtenha em: https://www.api-football.com/")
+api_key = st.sidebar.text_input("Chave API-Football", type="password", 
+                               help="Obtenha em: https://www.api-football.com/")
 season = st.sidebar.number_input("Temporada", 2023, 2025, 2024)
-league_id = st.sidebar.number_input("ID da Liga", value=71, help="Ex: 71=Brasileirão, 39=Premier League, 140=La Liga")
+
+# ▶️ Seleção aprimorada de ligas
+st.sidebar.markdown("### 🏆 Seleção de Liga")
+league_option = st.sidebar.selectbox("Liga Predefinida", 
+                                    options=list(LEAGUES.keys()),
+                                    index=0)
+
+# Campo para ID personalizado caso selecione "Outra Liga"
+if league_option == "Outra Liga":
+    custom_league_id = st.sidebar.number_input("ID Personalizado da Liga", 
+                                             min_value=1, value=71,
+                                             help="Insira o ID numérico da liga")
+    league_id = custom_league_id
+else:
+    league_id = LEAGUES[league_option]
+
+# Mostrar ID selecionado
+st.sidebar.info(f"ID da Liga Selecionada: **{league_id}**")
 
 # ▶️ Função para buscar dados da API
 def fetch_team_data(api_key, team_name, league, season):
-    """Busca estatísticas do time na API-Football"""
     if not api_key or not team_name:
         return None
         
@@ -83,7 +117,6 @@ def fetch_team_data(api_key, team_name, league, season):
 
 # ▶️ Função de análise aprimorada
 def analyze_match(home_data, away_data):
-    """Realiza análise estatística dos dados"""
     results = {}
     
     try:
@@ -105,7 +138,7 @@ def analyze_match(home_data, away_data):
         
         # Calcular taxas de vitória
         home_wins = home_fixtures.get('wins', {}).get('home', 0)
-        home_played = home_fixtures.get('played', {}).get('home', 1)  # Evitar divisão por zero
+        home_played = home_fixtures.get('played', {}).get('home', 1)
         win_rate_home = (home_wins / home_played) * 100 if home_played else 0
         
         away_wins = away_fixtures.get('wins', {}).get('away', 0)
@@ -114,8 +147,6 @@ def analyze_match(home_data, away_data):
         
         # Análise de gols
         avg_goals_total = avg_goals_home + avg_goals_away
-        
-        # Usar implementação própria de Poisson
         prob_over_25 = 1 - poisson_cdf(2, avg_goals_total) if avg_goals_total else 0
         
         # Análise de escanteios
@@ -131,9 +162,7 @@ def analyze_match(home_data, away_data):
             'avg_corners_away': avg_corners_away,
             'total_corners': total_corners,
             'win_rate_home': win_rate_home,
-            'win_rate_away': win_rate_away,
-            'home_wins': home_wins,
-            'away_wins': away_wins
+            'win_rate_away': win_rate_away
         }
     except Exception as e:
         st.error(f"Erro na análise: {str(e)}")
@@ -207,9 +236,9 @@ if st.button("🔍 Analisar Partida"):
         st.write(f"Média total de gols esperados: **{avg_goals_total:.2f}**")
         
         # Cálculo de probabilidade com Poisson
-        prob_over_25 = 1 - poisson_cdf(2, avg_goals_total)  # P(X > 2) = 1 - P(X <= 2)
+        prob_over_25 = 1 - poisson_cdf(2, avg_goals_total)
         
-        if prob_over_25 >= 0.65:  # 65% de probabilidade
+        if prob_over_25 >= 0.65:
             st.success(f"✅ Forte tendência de Over 2.5 gols (Prob: {prob_over_25:.0%})")
         elif prob_over_25 <= 0.35:
             st.warning(f"⚠️ Tendência de Under 2.5 gols (Prob: {1 - prob_over_25:.0%})")
@@ -264,4 +293,4 @@ if st.button("🔍 Analisar Partida"):
         st.markdown("📌 *Sugestões devem ser validadas com análise ao vivo e contexto atual*")
 
 st.markdown("---")
-st.caption("Desenvolvido por Football Analyzer Pro • Dados: API-Football • Streamlit App")
+st.caption("Desenvolvido por Football Analyzer Pro • Dados: API-Football • Streamlit App")   
