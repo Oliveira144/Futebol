@@ -45,8 +45,7 @@ class FootballElo:
             (home_win + 0.5 * draw) - expected_home
         )
         self.ratings[away_team] = self.get_rating(away_team) + self.k_factor * (
-            (1 - home_win + 0.5 * draw) - (1 - expected_home)
-        )
+            (1 - home_win + 0.5 * draw) - (1 - expected_home))
     
     def win_probability(self, home_team, away_team):
         rh = self.get_rating(home_team) + self.home_advantage
@@ -82,39 +81,6 @@ season = st.sidebar.number_input("Temporada", 2023, 2025, 2025)
 # ▶️ Sistema Avançado de Seleção de Liga
 st.sidebar.markdown("### 🏆 Seleção de Liga")
 
-# Busca de ligas na API
-def search_leagues(search_term, season):
-    if not search_term:
-        return []
-    
-    headers = {
-        "X-RapidAPI-Key": API_KEY,
-        "X-RapidAPI-Host": API_HOST
-    }
-    
-    try:
-        url = f"{API_URL}/leagues"
-        querystring = {"search": search_term, "season": season}
-        response = requests.get(url, headers=headers, params=querystring)
-        leagues_data = response.json()
-        
-        if leagues_data.get('results', 0) == 0:
-            return []
-            
-        leagues = []
-        for league in leagues_data['response']:
-            league_info = league['league']
-            country = league['country']['name'] if 'country' in league else "Desconhecido"
-            leagues.append({
-                'id': league_info['id'],
-                'name': f"{league_info['name']} ({country})",
-                'type': league_info['type']
-            })
-        return leagues
-    except Exception as e:
-        st.sidebar.error(f"Erro ao buscar ligas: {str(e)}")
-        return []
-
 # Lista de ligas populares
 POPULAR_LEAGUES = [
     {"name": "Brasileirão Série A", "id": 71, "country": "Brasil"},
@@ -141,20 +107,6 @@ for i, league in enumerate(POPULAR_LEAGUES):
             st.session_state.league_id = league['id']
             st.session_state.league_name = league['name']
             st.rerun()
-
-# Busca dinâmica
-if league_search:
-    league_results = search_leagues(league_search, season)
-    
-    if league_results:
-        st.sidebar.markdown("#### Resultados da Busca:")
-        for league in league_results:
-            if st.sidebar.button(league['name'], key=f"srch_league_{league['id']}"):
-                st.session_state.league_id = league['id']
-                st.session_state.league_name = league['name']
-                st.rerun()
-    else:
-        st.sidebar.warning("Nenhuma liga encontrada")
 
 # Mostrar liga selecionada
 st.sidebar.markdown("---")
@@ -280,17 +232,17 @@ def display_probability_grid(probs, home_team, away_team):
                 f"{away_team} {probs['expected_away_goals']:.1f}")
     st.metric("Probabilidade Over 2.5", f"{probs['over_25']:.1%}")
 
-# ▶️ Análise de valor
+# ▶️ Análise de valor CORRIGIDA
 def value_bet_analysis(probabilities, market_odds):
     value_bets = []
     
     # Calcular odds justas
     fair_odds = {
-        'home': 1 / probabilities['home_win'],
-        'draw': 1 / probabilities['draw'],
-        'away': 1 / probabilities['away_win'],
-        'over25': 1 / probabilities['over_25'],
-        'under25': 1 / (1 - probabilities['over_25'])
+        'home': 1 / probabilities['home_win'] if probabilities['home_win'] > 0 else 1000,
+        'draw': 1 / probabilities['draw'] if probabilities['draw'] > 0 else 1000,
+        'away': 1 / probabilities['away_win'] if probabilities['away_win'] > 0 else 1000,
+        'over25': 1 / probabilities['over_25'] if probabilities['over_25'] > 0 else 1000,
+        'under25': 1 / (1 - probabilities['over_25']) if probabilities['over_25'] < 1 else 1000
     }
     
     # Verificar valor em cada mercado
@@ -330,22 +282,20 @@ if st.button("🔄 Buscar Dados Automáticos", help="Busca estatísticas atualiz
             home_data = fetch_team_data(team_home, st.session_state.league_id, season)
             away_data = fetch_team_data(team_away, st.session_state.league_id, season)
             
-            if home_data and away_data:
+            if home_data:
                 try:
-                    # Processar dados da API
                     st.session_state.avg_goals_home = home_data['goals']['for']['average']['home']
-                    st.session_state.avg_goals_away = away_data['goals']['for']['average']['away']
-                    
-                    # Atualizar sistema Elo com dados históricos
-                    # (Implementação simplificada)
-                    st.session_state.elo_system.ratings[team_home] = 1500
-                    st.session_state.elo_system.ratings[team_away] = 1500
-                    
-                    st.success("Dados atualizados com sucesso!")
                 except KeyError:
-                    st.warning("Dados incompletos da API - usando valores padrão")
-                time.sleep(1)
-                st.rerun()
+                    st.warning("Dados incompletos para o time mandante")
+            if away_data:
+                try:
+                    st.session_state.avg_goals_away = away_data['goals']['for']['average']['away']
+                except KeyError:
+                    st.warning("Dados incompletos para o time visitante")
+            
+            st.success("Dados atualizados com sucesso!")
+            time.sleep(1)
+            st.rerun()
 
 # ▶️ Fatores Contextuais
 st.header("🎯 Fatores Contextuais")
@@ -436,21 +386,24 @@ if st.button("🔍 Realizar Análise Profissional", type="primary", use_containe
                 'under25': market_under
             }
             
+            # CHAMADA CORRIGIDA para value_bet_analysis
             value_df = value_bet_analysis({
-                'home': prediction['home_win'],
+                'home_win': prediction['home_win'],
                 'draw': prediction['draw'],
-                'away': prediction['away_win'],
-                'over25': prediction['over_25'],
-                'under25': 1 - prediction['over_25']
+                'away_win': prediction['away_win'],
+                'over_25': prediction['over_25']
             }, market_odds)
             
             if not value_df.empty:
                 st.success("🎯 OPORTUNIDADES DE VALUE BET")
-                st.dataframe(value_df.style.format({
+                # Formatar a tabela para melhor visualização
+                styled_df = value_df.style.format({
                     'Odd Justa': '{:.2f}',
                     'Odd Mercado': '{:.2f}',
                     'Valor (%)': '{:.1f}%'
-                }).background_gradient(subset=['Valor (%)'], cmap='Greens'))
+                }).background_gradient(subset=['Valor (%)'], cmap='Greens')
+                
+                st.dataframe(styled_df)
             else:
                 st.warning("⚠️ Nenhuma oportunidade de valor identificada")
             
@@ -479,13 +432,24 @@ if st.button("🔍 Realizar Análise Profissional", type="primary", use_containe
                 st.success("#### 💡 Melhores Oportunidades:")
                 for rec in recommendations:
                     st.markdown(f"- {rec}")
+                
+                st.markdown("""
+                **Estratégia Recomendada:**
+                - Aposte apenas em mercados com >5% de valor
+                - Gerencie seu bankroll (não aposte mais que 2% por aposta)
+                - Considere combinar com outros mercados para aumentar o valor
+                """)
             else:
                 st.info("#### ⚖️ Partida Equilibrada")
-                st.markdown("- Considere mercados alternativos ou apostas menores")
+                st.markdown("""
+                - Considere mercados alternativos (ambos marcam, escanteios, etc.)
+                - Apostas menores com maior valor
+                - Aguarde odds melhores durante o jogo
+                """)
             
             st.markdown("---")
-            st.caption("⚠️ **Nota:** Recomendações baseadas em modelos estatísticos. Considere outros fatores antes de apostar.")
+            st.caption("⚠️ **Nota Profissional:** As recomendações são baseadas em modelos estatísticos. Sempre considere fatores adicionais como escalações completas, condições climáticas, histórico de confrontos e contexto da partida antes de apostar.")
 
 # ▶️ Rodapé
 st.markdown("---")
-st.caption(f"© {datetime.now().year} Football Analyzer Pro+ • Modelo Profissional v2.0 • Dados: API-Football")
+st.caption(f"© {datetime.now().year} Football Analyzer Pro+ • Modelo Profissional v2.1 • Dados: API-Football")
