@@ -8,6 +8,7 @@ st.set_page_config(page_title="Football Analyzer Pro", layout="wide")
 # Configurações da API
 API_HOST = "api-football-v1.p.rapidapi.com"
 API_URL = "https://api-football-v1.p.rapidapi.com/v3"
+API_KEY = "2ca691e1f853684f13f3d7c492d0b0f5"  # Sua chave aqui
 
 # ▶️ Implementação alternativa de Poisson
 def poisson_pdf(k, mu):
@@ -36,20 +37,15 @@ st.title("⚽ Football Analyzer Pro")
 st.subheader("Análise Avançada com Dados Automáticos de API")
 st.markdown("---")
 
-# ▶️ Configurações de API na sidebar
-st.sidebar.header("🔌 Configurações da API")
-api_key = st.sidebar.text_input("Chave API-Football", type="password", 
-                               help="Obtenha em: https://www.api-football.com/")
+# ▶️ Configurações na sidebar
+st.sidebar.header("🔌 Configurações")
 season = st.sidebar.number_input("Temporada", 2023, 2025, 2024)
 
 # ▶️ Busca dinâmica de ligas
-def search_leagues(api_key, search_term, season):
+def search_leagues(search_term, season):
     """Busca ligas na API pelo nome"""
-    if not api_key or not search_term:
-        return []
-    
     headers = {
-        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Key": API_KEY,
         "X-RapidAPI-Host": API_HOST
     }
     
@@ -77,45 +73,62 @@ def search_leagues(api_key, search_term, season):
         st.sidebar.error(f"Erro ao buscar ligas: {str(e)}")
         return []
 
-# ▶️ Seleção de liga com busca
+# ▶️ Sistema avançado de seleção de liga
 st.sidebar.markdown("### 🏆 Seleção de Liga")
 
-# Busca por nome da liga
+# Opção 1: Busca por nome
 league_search = st.sidebar.text_input("Buscar Liga por Nome", 
                                      help="Ex: Premier League, Brasileirão, La Liga")
-league_results = []
 
-if api_key and league_search:
+# Opção 2: Lista de ligas populares (cache)
+POPULAR_LEAGUES = [
+    {"name": "Premier League", "id": 39, "country": "Inglaterra"},
+    {"name": "La Liga", "id": 140, "country": "Espanha"},
+    {"name": "Bundesliga", "id": 78, "country": "Alemanha"},
+    {"name": "Serie A", "id": 135, "country": "Itália"},
+    {"name": "Ligue 1", "id": 61, "country": "França"},
+    {"name": "Brasileirão Série A", "id": 71, "country": "Brasil"},
+    {"name": "Primeira Liga", "id": 94, "country": "Portugal"},
+    {"name": "Eredivisie", "id": 88, "country": "Holanda"},
+    {"name": "MLS", "id": 253, "country": "EUA/Canadá"},
+    {"name": "Liga Profesional", "id": 128, "country": "Argentina"}
+]
+
+# Mostrar ligas populares
+st.sidebar.markdown("#### Ligas Populares:")
+popular_cols = st.sidebar.columns(2)
+for i, league in enumerate(POPULAR_LEAGUES):
+    with popular_cols[i % 2]:
+        if st.button(f"{league['name']} ({league['country']})", key=f"pop_league_{i}"):
+            st.session_state.league_id = league['id']
+            st.session_state.league_name = league['name']
+            st.experimental_rerun()
+
+# Busca dinâmica
+if league_search:
     with st.spinner("Buscando ligas..."):
-        league_results = search_leagues(api_key, league_search, season)
+        league_results = search_leagues(league_search, season)
+        
+        if league_results:
+            st.sidebar.markdown("#### Resultados da Busca:")
+            for league in league_results:
+                if st.sidebar.button(league['name'], key=f"srch_league_{league['id']}"):
+                    st.session_state.league_id = league['id']
+                    st.session_state.league_name = league['name']
+                    st.experimental_rerun()
+        else:
+            st.sidebar.warning("Nenhuma liga encontrada")
 
-# Mostrar resultados da busca
-if league_results:
-    league_options = {f"{league['name']}": league['id'] for league in league_results}
-    selected_league_name = st.sidebar.selectbox("Ligas Encontradas", options=list(league_options.keys()))
-    league_id = league_options[selected_league_name]
-    st.session_state.league_id = league_id
-    st.session_state.league_name = selected_league_name
-else:
-    st.sidebar.info("Digite o nome de uma liga e clique fora para buscar")
-    league_id = st.sidebar.number_input("ID da Liga (Manual)", 
-                                       min_value=1, 
-                                       value=st.session_state.get('league_id', 71),
-                                       help="Insira o ID numérico da liga")
-    st.session_state.league_id = league_id
-
-# Mostrar ID selecionado
-st.sidebar.info(f"ID da Liga Selecionada: **{st.session_state.league_id}**")
-if 'league_name' in st.session_state:
-    st.sidebar.info(f"Liga: **{st.session_state.league_name}**")
+# Mostrar liga selecionada
+st.sidebar.markdown("---")
+st.sidebar.subheader("Liga Selecionada")
+st.sidebar.info(f"**{st.session_state.league_name}**")
+st.sidebar.info(f"ID: **{st.session_state.league_id}**")
 
 # ▶️ Função para buscar dados da API
-def fetch_team_data(api_key, team_name, league, season):
-    if not api_key or not team_name:
-        return None
-        
+def fetch_team_data(team_name, league, season):
     headers = {
-        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Key": API_KEY,
         "X-RapidAPI-Host": API_HOST
     }
     
@@ -231,10 +244,10 @@ with col4:
                                   value=st.session_state.get('win_rate_away', 30.0))
 
 # ▶️ Botão para buscar dados automáticos
-if st.button("🔄 Buscar Dados Automáticos", help="Busca estatísticas atualizadas da API") and api_key:
+if st.button("🔄 Buscar Dados Automáticos", help="Busca estatísticas atualizadas da API"):
     with st.spinner(f"Buscando dados para {team_home} e {team_away}..."):
-        home_data = fetch_team_data(api_key, team_home, st.session_state.league_id, season)
-        away_data = fetch_team_data(api_key, team_away, st.session_state.league_id, season)
+        home_data = fetch_team_data(team_home, st.session_state.league_id, season)
+        away_data = fetch_team_data(team_away, st.session_state.league_id, season)
         
         if home_data and away_data:
             analysis = analyze_match(home_data, away_data)
@@ -325,4 +338,4 @@ if st.button("🔍 Analisar Partida"):
         st.markdown("📌 *Sugestões devem ser validadas com análise ao vivo e contexto atual*")
 
 st.markdown("---")
-st.caption("Desenvolvido por Football Analyzer Pro • Dados: API-Football • Streamlit App")
+st.caption(f"Desenvolvido por Football Analyzer Pro • Liga Atual: {st.session_state.league_name} • Dados: API-Football")
