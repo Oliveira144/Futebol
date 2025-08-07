@@ -5,32 +5,23 @@ import time
 import pandas as pd
 import numpy as np
 from datetime import datetime
-import scipy.stats as stats # Importa a biblioteca para cálculos estatísticos
 
-# --- Configurações Iniciais ---
+# Configurações
 st.set_page_config(page_title="Football Analyzer Pro+", layout="wide", page_icon="⚽")
 
-# Tenta carregar a chave da API de um arquivo de segredos, ou usa a fallback
-try:
-    API_KEY = st.secrets["api_football"]["key"]
-except (KeyError, FileNotFoundError):
-    st.warning("Chave da API não encontrada. Usando chave de fallback.")
-    API_KEY = "2ca691e1f853684f13f3d7c492d0b0f5" # Sua chave de fallback
-
+# Configurações da API
 API_HOST = "api-football-v1.p.rapidapi.com"
 API_URL = "https://api-football-v1.p.rapidapi.com/v3"
+API_KEY = "2ca691e1f853684f13f3d7c492d0b0f5"  # Sua chave API
 
-# --- Modelos Analíticos ---
-@st.cache_data(ttl=3600)  # Cache de 1 hora para evitar re-cálculos
+# ▶️ Implementação avançada de Poisson
 def poisson_pmf(k, mu):
-    """Calcula a Probabilidade da Função de Massa (PMF) de Poisson."""
-    return stats.poisson.pmf(k, mu)
+    return (mu ** k) * math.exp(-mu) / math.factorial(int(k))
 
-@st.cache_data(ttl=3600)
 def bivariate_poisson_prob(home_goals, away_goals, lambda_home, lambda_away):
-    """Calcula a probabilidade de um placar usando Poisson Bivariado."""
     return poisson_pmf(home_goals, lambda_home) * poisson_pmf(away_goals, lambda_away)
 
+# ▶️ Sistema de Rating Elo
 class FootballElo:
     def __init__(self, base_rating=1500, k_factor=30, home_advantage=100):
         self.base_rating = base_rating
@@ -64,27 +55,31 @@ class FootballElo:
         return {
             'home': home_prob,
             'away': away_prob,
-            'draw': max(0, 1 - (home_prob + away_prob))
+            'draw': max(0, 1 - (home_prob + away_prob))  # Garantir não negativo
         }
 
-# --- Inicialização de Sessão ---
-if 'elo_system' not in st.session_state:
+# ▶️ Inicialização de sessão
+if 'avg_goals_home' not in st.session_state:
     st.session_state.update({
         'avg_goals_home': 1.5,
         'avg_goals_away': 1.2,
         'league_id': 71,
         'league_name': "Campeonato Brasileiro Série A",
         'elo_system': FootballElo(),
+        'leagues_cache': {}
     })
 
-# --- Interface Principal ---
+# ▶️ Interface principal
 st.title("⚽ Football Analyzer Pro+")
 st.subheader("Análise Profissional: Inteligência de Apostas")
 st.markdown("---")
 
-# --- Barra Lateral de Configurações ---
+# ▶️ Configurações na sidebar
 st.sidebar.header("🔌 Configurações")
-st.sidebar.markdown("### 🏆 Seleção de Liga e Temporada")
+season = st.sidebar.number_input("Temporada", 2023, 2025, 2025)
+
+# ▶️ Sistema Avançado de Seleção de Liga
+st.sidebar.markdown("### 🏆 Seleção de Liga")
 
 # Lista de ligas populares
 POPULAR_LEAGUES = [
@@ -100,26 +95,28 @@ POPULAR_LEAGUES = [
     {"name": "Copa Libertadores", "id": 13, "country": "América do Sul"}
 ]
 
-# Usando st.selectbox para uma seleção mais limpa
-selected_league = st.sidebar.selectbox(
-    "🏆 Selecione a Liga",
-    options=POPULAR_LEAGUES,
-    format_func=lambda x: f"{x['name']} ({x['country']})"
-)
-st.session_state.league_id = selected_league['id']
-st.session_state.league_name = selected_league['name']
+# Campo de busca
+league_search = st.sidebar.text_input("Buscar Liga por Nome", key="league_search")
 
-season = st.sidebar.number_input("Temporada", 2010, datetime.now().year + 1, datetime.now().year)
+# Seção de ligas populares
+st.sidebar.markdown("#### Ligas Populares:")
+popular_cols = st.sidebar.columns(2)
+for i, league in enumerate(POPULAR_LEAGUES):
+    with popular_cols[i % 2]:
+        if st.button(f"{league['name']}", key=f"pop_league_{i}"):
+            st.session_state.league_id = league['id']
+            st.session_state.league_name = league['name']
+            st.rerun()
 
+# Mostrar liga selecionada
 st.sidebar.markdown("---")
 st.sidebar.subheader("Liga Selecionada")
-st.sidebar.info(f"**{st.session_state.league_name}** - ID: **{st.session_state.league_id}**")
-st.sidebar.info(f"Temporada: **{season}**")
+if 'league_name' in st.session_state:
+    st.sidebar.info(f"**{st.session_state.league_name}**")
+st.sidebar.info(f"ID: **{st.session_state.league_id}**")
 
-# --- Funções de API com Cache ---
-@st.cache_data(ttl=3600, show_spinner=False)
+# ▶️ Função para buscar dados da API - CORRIGIDA
 def fetch_team_data(team_name, league, season):
-    """Busca dados de um time na API com caching."""
     headers = {
         "X-RapidAPI-Key": API_KEY,
         "X-RapidAPI-Host": API_HOST
@@ -131,15 +128,17 @@ def fetch_team_data(team_name, league, season):
         querystring = {"name": team_name}
         response = requests.get(url, headers=headers, params=querystring, timeout=10)
         
+        # Verificar limite de requisições
         if response.status_code == 429:
             st.error("Limite de requisições excedido. Tente novamente mais tarde.")
             return None
         elif response.status_code != 200:
-            st.error(f"Erro na API ao buscar time: {response.status_code}")
+            st.error(f"Erro na API: {response.status_code}")
             return None
             
         team_data = response.json()
-        if not team_data['response']:
+        
+        if team_data.get('results', 0) == 0:
             st.error(f"Time '{team_name}' não encontrado!")
             return None
             
@@ -158,10 +157,11 @@ def fetch_team_data(team_name, league, season):
             st.error("Limite de requisições excedido. Tente novamente mais tarde.")
             return None
         elif response.status_code != 200:
-            st.error(f"Erro na API ao buscar estatísticas: {response.status_code}")
+            st.error(f"Erro na API: {response.status_code}")
             return None
             
         stats_data = response.json()
+        
         return stats_data.get('response', {})
     except requests.exceptions.Timeout:
         st.error("A requisição demorou muito. Tente novamente.")
@@ -170,17 +170,20 @@ def fetch_team_data(team_name, league, season):
         st.error(f"Erro na API: {str(e)}")
         return None
 
-# --- Modelo de Previsão e Funções de Exibição ---
+# ▶️ Modelo Avançado de Previsão
 def advanced_prediction_model(home_team, away_team, home_data, away_data, elo_system, context_factors):
+    # Médias básicas
     lambda_home = home_data['avg_goals_home'] * context_factors['home_attack_factor']
     lambda_away = away_data['avg_goals_away'] * context_factors['away_attack_factor']
     
+    # Ajustes defensivos
     home_defense_factor = 1 - (away_data['avg_goals_away'] / 5)
     away_defense_factor = 1 - (home_data['avg_goals_home'] / 5)
     
     lambda_home_adj = lambda_home * away_defense_factor
     lambda_away_adj = lambda_away * home_defense_factor
     
+    # Probabilidades de Poisson
     max_goals = 6
     score_probs = np.zeros((max_goals, max_goals))
     
@@ -188,56 +191,72 @@ def advanced_prediction_model(home_team, away_team, home_data, away_data, elo_sy
         for j in range(max_goals):
             score_probs[i, j] = bivariate_poisson_prob(i, j, lambda_home_adj, lambda_away_adj)
     
+    # Normalizar
     score_probs = score_probs / score_probs.sum()
     
+    # Calcular probabilidades de resultados
     home_win_prob = np.sum(np.tril(score_probs, -1))
     draw_prob = np.sum(np.diag(score_probs))
     away_win_prob = np.sum(np.triu(score_probs, 1))
     
+    # Over/Under 2.5
     over_25_prob = 1 - np.sum(score_probs[:3, :3])
     
+    # Integrar sistema Elo
     elo_probs = elo_system.win_probability(home_team, away_team)
     
+    # Combinação ponderada
     final_home = (home_win_prob * 0.6) + (elo_probs['home'] * 0.4)
     final_draw = (draw_prob * 0.6) + (elo_probs['draw'] * 0.4)
     final_away = (away_win_prob * 0.6) + (elo_probs['away'] * 0.4)
     
+    # Ajuste de fatores contextuais
     final_home *= context_factors['home_motivation']
     final_away *= context_factors['away_motivation']
     
+    # Normalizar
     total = final_home + final_draw + final_away
-    if total > 0:
-        return {
-            'home_win': final_home / total,
-            'draw': final_draw / total,
-            'away_win': final_away / total,
-            'over_25': over_25_prob,
-            'expected_home_goals': lambda_home_adj,
-            'expected_away_goals': lambda_away_adj
-        }
-    else:
-        return {
-            'home_win': 0, 'draw': 0, 'away_win': 0, 'over_25': 0.5,
-            'expected_home_goals': 0, 'expected_away_goals': 0
-        }
+    return {
+        'home_win': final_home / total,
+        'draw': final_draw / total,
+        'away_win': final_away / total,
+        'over_25': over_25_prob,
+        'expected_home_goals': lambda_home_adj,
+        'expected_away_goals': lambda_away_adj
+    }
 
+# ▶️ Visualização de probabilidades
 def display_probability_grid(probs, home_team, away_team):
     st.markdown("### 📊 Probabilidades de Resultado")
+    
+    # Criar DataFrame para o gráfico
     prob_data = pd.DataFrame({
         'Resultado': [f'Vitória {home_team}', 'Empate', f'Vitória {away_team}'],
         'Probabilidade': [probs['home_win'], probs['draw'], probs['away_win']]
     })
+    
+    # Exibir gráfico de barras
     st.bar_chart(prob_data.set_index('Resultado'), height=300)
+    
+    # Exibir métricas
     col1, col2, col3 = st.columns(3)
-    with col1: st.metric(f"Vitória {home_team}", f"{probs['home_win']:.1%}")
-    with col2: st.metric("Empate", f"{probs['draw']:.1%}")
-    with col3: st.metric(f"Vitória {away_team}", f"{probs['away_win']:.1%}")
+    with col1:
+        st.metric(f"Vitória {home_team}", f"{probs['home_win']:.1%}")
+    with col2:
+        st.metric("Empate", f"{probs['draw']:.1%}")
+    with col3:
+        st.metric(f"Vitória {away_team}", f"{probs['away_win']:.1%}")
+    
+    # Exibir informações adicionais
     st.markdown(f"**Gols Esperados:** {home_team} {probs['expected_home_goals']:.1f} - "
                 f"{away_team} {probs['expected_away_goals']:.1f}")
     st.metric("Probabilidade Over 2.5", f"{probs['over_25']:.1%}")
 
+# ▶️ Análise de valor CORRIGIDA
 def value_bet_analysis(probabilities, market_odds):
     value_bets = []
+    
+    # Calcular odds justas
     fair_odds = {
         'home': 1 / probabilities['home_win'] if probabilities['home_win'] > 0 else 1000,
         'draw': 1 / probabilities['draw'] if probabilities['draw'] > 0 else 1000,
@@ -245,32 +264,38 @@ def value_bet_analysis(probabilities, market_odds):
         'over25': 1 / probabilities['over_25'] if probabilities['over_25'] > 0 else 1000,
         'under25': 1 / (1 - probabilities['over_25']) if probabilities['over_25'] < 1 else 1000
     }
+    
+    # Verificar valor em cada mercado
     for market in fair_odds:
-        if market in market_odds and market_odds[market] > fair_odds[market]:
-            value = (market_odds[market] / fair_odds[market] - 1) * 100
-            value_bets.append({
-                'Mercado': market,
-                'Odd Justa': round(fair_odds[market], 2),
-                'Odd Mercado': market_odds[market],
-                'Valor (%)': round(value, 1)
-            })
+        if market in market_odds:
+            if market_odds[market] > fair_odds[market]:
+                value = (market_odds[market] / fair_odds[market] - 1) * 100
+                value_bets.append({
+                    'Mercado': market,
+                    'Odd Justa': round(fair_odds[market], 2),
+                    'Odd Mercado': market_odds[market],
+                    'Valor (%)': round(value, 1)
+                })
+    
     return pd.DataFrame(value_bets)
 
-# --- Entrada de Dados e Análise ---
+# ▶️ Entrada de dados - CORRIGIDA
 st.header("📋 Informações da Partida")
-match_date = st.date_input("🗓️ Data da Partida", datetime.now())
-
 col1, col2 = st.columns(2)
+
 with col1:
     team_home = st.text_input("Time Mandante", key='home_team')
+    # Vinculado ao session_state
     avg_goals_home = st.number_input(
         "Média de Gols Marcados (Casa)", 
         0.0, 10.0, step=0.1,
         value=st.session_state.avg_goals_home,
         key='avg_home_input'
     )
+
 with col2:
     team_away = st.text_input("Time Visitante", key='away_team')
+    # Vinculado ao session_state
     avg_goals_away = st.number_input(
         "Média de Gols Marcados (Fora)", 
         0.0, 10.0, step=0.1,
@@ -278,6 +303,7 @@ with col2:
         key='avg_away_input'
     )
 
+# ▶️ Botão para buscar dados automáticos - CORRIGIDO
 if st.button("🔄 Buscar Dados Automáticos", help="Busca estatísticas atualizadas da API"):
     if not team_home or not team_away:
         st.error("Por favor, preencha os nomes dos times!")
@@ -286,33 +312,62 @@ if st.button("🔄 Buscar Dados Automáticos", help="Busca estatísticas atualiz
             home_data = fetch_team_data(team_home, st.session_state.league_id, season)
             away_data = fetch_team_data(team_away, st.session_state.league_id, season)
             
-            if home_data and 'goals' in home_data and 'for' in home_data['goals']:
-                avg_home = float(home_data['goals']['for']['average']['home'])
-                st.session_state.avg_goals_home = avg_home
-            else:
-                st.warning(f"Dados de gols em casa não encontrados para {team_home}. Verifique o nome do time ou a liga/temporada.")
-
-            if away_data and 'goals' in away_data and 'for' in away_data['goals']:
-                avg_away = float(away_data['goals']['for']['average']['away'])
-                st.session_state.avg_goals_away = avg_away
-            else:
-                st.warning(f"Dados de gols fora não encontrados para {team_away}. Verifique o nome do time ou a liga/temporada.")
+            # Processamento CORRETO dos dados do time mandante
+            if home_data:
+                try:
+                    # Acessando corretamente a estrutura de dados
+                    if 'goals' in home_data and 'for' in home_data['goals']:
+                        goals_for = home_data['goals']['for']
+                        if 'average' in goals_for and 'home' in goals_for['average']:
+                            # Convertendo para float
+                            avg_home = float(goals_for['average']['home'])
+                            st.session_state.avg_goals_home = avg_home
+                        else:
+                            st.warning(f"Dados de média de gols em casa não encontrados para {team_home}")
+                    else:
+                        st.warning(f"Dados de gols não encontrados para {team_home}")
+                except Exception as e:
+                    st.error(f"Erro ao processar dados do {team_home}: {str(e)}")
+            
+            # Processamento CORRETO dos dados do time visitante
+            if away_data:
+                try:
+                    if 'goals' in away_data and 'for' in away_data['goals']:
+                        goals_for = away_data['goals']['for']
+                        if 'average' in goals_for and 'away' in goals_for['average']:
+                            # Convertendo para float
+                            avg_away = float(goals_for['average']['away'])
+                            st.session_state.avg_goals_away = avg_away
+                        else:
+                            st.warning(f"Dados de média de gols fora não encontrados para {team_away}")
+                    else:
+                        st.warning(f"Dados de gols não encontrados para {team_away}")
+                except Exception as e:
+                    st.error(f"Erro ao processar dados do {team_away}: {str(e)}")
             
             st.success("Dados atualizados com sucesso!")
+            time.sleep(1)
             st.rerun()
 
+# ▶️ Fatores Contextuais
 st.header("🎯 Fatores Contextuais")
 st.info("Ajuste os fatores com base em conhecimento específico da partida")
 
 col_context1, col_context2 = st.columns(2)
+
 with col_context1:
     st.subheader(f"Fatores do {team_home}")
-    home_attack_factor = st.slider("Fator de Ataque (Casa)", 0.7, 1.3, 1.0, 0.05, key='home_attack')
-    home_motivation = st.slider("Motivação", 0.7, 1.3, 1.0, 0.05, key='home_motivation')
+    home_attack_factor = st.slider("Fator de Ataque (Casa)", 0.7, 1.3, 1.0, 0.05,
+                                  help="Desempenho ofensivo recente", key='home_attack')
+    home_motivation = st.slider("Motivação", 0.7, 1.3, 1.0, 0.05,
+                               help="Importância da partida", key='home_motivation')
+
 with col_context2:
     st.subheader(f"Fatores do {team_away}")
-    away_attack_factor = st.slider("Fator de Ataque (Fora)", 0.7, 1.3, 1.0, 0.05, key='away_attack')
-    away_motivation = st.slider("Motivação", 0.7, 1.3, 1.0, 0.05, key='away_motivation')
+    away_attack_factor = st.slider("Fator de Ataque (Fora)", 0.7, 1.3, 1.0, 0.05,
+                                  help="Desempenho ofensivo recente", key='away_attack')
+    away_motivation = st.slider("Motivação", 0.7, 1.3, 1.0, 0.05,
+                               help="Importância da partida", key='away_motivation')
 
 context_factors = {
     'home_attack_factor': home_attack_factor,
@@ -321,61 +376,115 @@ context_factors = {
     'away_motivation': away_motivation
 }
 
+# ▶️ Análise Profissional
 st.markdown("---")
 if st.button("🔍 Realizar Análise Profissional", type="primary", use_container_width=True):
     if not team_home or not team_away:
         st.error("Por favor, preencha os nomes dos times!")
     else:
         with st.spinner("Executando modelo avançado..."):
-            home_data = {'avg_goals_home': st.session_state.avg_goals_home, 'avg_goals_away': st.session_state.avg_goals_away}
-            away_data = {'avg_goals_home': st.session_state.avg_goals_away, 'avg_goals_away': st.session_state.avg_goals_away}
+            # Dados para o modelo
+            home_data = {
+                'avg_goals_home': st.session_state.avg_goals_home,
+                'avg_goals_away': st.session_state.avg_goals_away
+            }
             
-            prediction = advanced_prediction_model(team_home, team_away, home_data, away_data, st.session_state.elo_system, context_factors)
+            away_data = {
+                'avg_goals_home': st.session_state.avg_goals_away,
+                'avg_goals_away': st.session_state.avg_goals_away
+            }
+            
+            # Executar previsão
+            prediction = advanced_prediction_model(
+                team_home,
+                team_away,
+                home_data,
+                away_data,
+                st.session_state.elo_system,
+                context_factors
+            )
             
             st.success("Análise concluída!")
             st.markdown("---")
             st.subheader("📊 Resultados da Análise")
+            
+            # Mostrar resultados
             display_probability_grid(prediction, team_home, team_away)
             
+            # Análise de valor
             st.markdown("---")
             st.subheader("💰 Análise de Valor")
             st.info("Compare as probabilidades com as odds do mercado")
             
             col_odds1, col_odds2, col_odds3 = st.columns(3)
-            with col_odds1: market_home = st.number_input(f"Odd {team_home}", min_value=1.01, value=2.10, step=0.05)
-            with col_odds2: market_draw = st.number_input("Odd Empate", min_value=1.01, value=3.40, step=0.05)
-            with col_odds3: market_away = st.number_input(f"Odd {team_away}", min_value=1.01, value=3.80, step=0.05)
+            with col_odds1:
+                market_home = st.number_input(f"Odd {team_home}", min_value=1.01, value=2.10, step=0.05)
+            with col_odds2:
+                market_draw = st.number_input("Odd Empate", min_value=1.01, value=3.40, step=0.05)
+            with col_odds3:
+                market_away = st.number_input(f"Odd {team_away}", min_value=1.01, value=3.80, step=0.05)
+            
             col_odds4, col_odds5 = st.columns(2)
-            with col_odds4: market_over = st.number_input("Odd Over 2.5", min_value=1.01, value=1.95, step=0.05)
-            with col_odds5: market_under = st.number_input("Odd Under 2.5", min_value=1.01, value=1.90, step=0.05)
+            with col_odds4:
+                market_over = st.number_input("Odd Over 2.5", min_value=1.01, value=1.95, step=0.05)
+            with col_odds5:
+                market_under = st.number_input("Odd Under 2.5", min_value=1.01, value=1.90, step=0.05)
             
-            market_odds = {'home': market_home, 'draw': market_draw, 'away': market_away, 'over25': market_over, 'under25': market_under}
+            market_odds = {
+                'home': market_home,
+                'draw': market_draw,
+                'away': market_away,
+                'over25': market_over,
+                'under25': market_under
+            }
             
-            value_df = value_bet_analysis({'home_win': prediction['home_win'], 'draw': prediction['draw'], 'away_win': prediction['away_win'], 'over_25': prediction['over_25']}, market_odds)
+            # CHAMADA CORRIGIDA para value_bet_analysis
+            value_df = value_bet_analysis({
+                'home_win': prediction['home_win'],
+                'draw': prediction['draw'],
+                'away_win': prediction['away_win'],
+                'over_25': prediction['over_25']
+            }, market_odds)
             
             if not value_df.empty:
                 st.success("🎯 OPORTUNIDADES DE VALUE BET")
-                styled_df = value_df.style.format({'Odd Justa': '{:.2f}', 'Odd Mercado': '{:.2f}', 'Valor (%)': '{:.1f}%'}).background_gradient(subset=['Valor (%)'], cmap='Greens')
+                # Formatar a tabela para melhor visualização
+                styled_df = value_df.style.format({
+                    'Odd Justa': '{:.2f}',
+                    'Odd Mercado': '{:.2f}',
+                    'Valor (%)': '{:.1f}%'
+                }).background_gradient(subset=['Valor (%)'], cmap='Greens')
+                
                 st.dataframe(styled_df)
             else:
                 st.warning("⚠️ Nenhuma oportunidade de valor identificada")
             
+            # Recomendações
             st.markdown("---")
             st.subheader("🎯 Recomendações Estratégicas")
+            
             recommendations = []
+            
+            # Critério para over 2.5
             if prediction['over_25'] > 0.55 and market_over > (1 / prediction['over_25']):
                 value_pct = (market_over - 1/prediction['over_25'])/(1/prediction['over_25'])*100
                 recommendations.append(f"**OVER 2.5 GOALS** (Prob: {prediction['over_25']:.1%}, Valor: {value_pct:.1f}%)")
+            
+            # Critério para vitória em casa
             if prediction['home_win'] > 0.5 and market_home > (1 / prediction['home_win']):
                 value_pct = (market_home - 1/prediction['home_win'])/(1/prediction['home_win'])*100
                 recommendations.append(f"**VITÓRIA {team_home.upper()}** (Prob: {prediction['home_win']:.1%}, Valor: {value_pct:.1f}%)")
+            
+            # Critério para vitória fora
             if prediction['away_win'] > 0.4 and market_away > (1 / prediction['away_win']):
                 value_pct = (market_away - 1/prediction['away_win'])/(1/prediction['away_win'])*100
                 recommendations.append(f"**VITÓRIA {team_away.upper()}** (Prob: {prediction['away_win']:.1%}, Valor: {value_pct:.1f}%)")
             
             if recommendations:
                 st.success("#### 💡 Melhores Oportunidades:")
-                for rec in recommendations: st.markdown(f"- {rec}")
+                for rec in recommendations:
+                    st.markdown(f"- {rec}")
+                
                 st.markdown("""
                 **Estratégia Recomendada:**
                 - Aposte apenas em mercados com >5% de valor
@@ -393,6 +502,6 @@ if st.button("🔍 Realizar Análise Profissional", type="primary", use_containe
             st.markdown("---")
             st.caption("⚠️ **Nota Profissional:** As recomendações são baseadas em modelos estatísticos. Sempre considere fatores adicionais como escalações completas, condições climáticas, histórico de confrontos e contexto da partida antes de apostar.")
 
+# ▶️ Rodapé
 st.markdown("---")
 st.caption(f"© {datetime.now().year} Football Analyzer Pro+ • Modelo Profissional v2.1 • Dados: API-Football")
-        
